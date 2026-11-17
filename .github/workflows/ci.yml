@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Test
+        run: PYTHONPATH=src python -m pytest tests/ -v
+      - name: Layout demo
+        run: python -m slotwright layout examples/VaultV1.sol
+      - name: Gate accepts the safe upgrade
+        run: python -m slotwright diff examples/VaultV1.sol examples/VaultV2_good.sol --fail-on-breaking
+      - name: Gate rejects the unsafe upgrade
+        run: |
+          if python -m slotwright diff examples/VaultV1.sol examples/VaultV2_bad.sol --fail-on-breaking; then
+            echo "expected the unsafe upgrade to fail the gate" >&2
+            exit 1
+          fi

@@ -1,0 +1,6 @@
+Upgrade diff: Vault
+old: 12 slot(s)   new: 12 slot(s)
+
+SAFE     gap-consumed  lastSynced: new variable placed at slot 4 offset 0 (uint256) inside the reserved storage of '__gap'
+
+Verdict: SAFE

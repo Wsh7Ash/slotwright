@@ -1,0 +1,7 @@
+Upgrade diff: Vault
+old: 12 slot(s)   new: 12 slot(s)
+
+BREAKING inserted  pendingFees: new variable inserted at slot 1 offset 0 (uint128), reusing storage that held 'feeBps'; every later variable shifts
+BREAKING moved     feeBps: moved from slot 1 offset 0 to slot 1 offset 16
+
+Verdict: BREAKING

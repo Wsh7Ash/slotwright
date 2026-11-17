@@ -1,0 +1,10 @@
+Storage layout: VaultV1 (12 slots)
+
+slot  offset  bytes  type                         name           declared in
+----  ------  -----  ---------------------------  -------------  -----------
+0     0       20     address                      owner          VaultV1:6
+0     20      1      bool                         paused         VaultV1:7
+1     0       12     uint96                       feeBps         VaultV1:8
+2     0       32     uint256                      totalDeposits  VaultV1:9
+3     0       32     mapping(address => uint256)  balances       VaultV1:10
+4     0       256    uint256[8]                   __gap          VaultV1:11
