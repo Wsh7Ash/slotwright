@@ -52,6 +52,31 @@ slot  offset  bytes  type         name   declared in
 
 Commit the previous version of the contract alongside the new one (or generate it from the release tag) so the diff has both sides.
 
+## Imports
+
+Relative imports are resolved automatically when you run `layout`, `diff` or
+`contracts` on a file:
+
+```solidity
+import "./Base.sol";
+import "Base.sol";
+import {Foo} from "./Foo.sol";
+import * as Lib from "./Lib.sol";
+```
+
+The imported file is read relative to the importing file's directory, parsed,
+and its contracts, in-contract structs/enums and file-level structs/enums are
+merged into the same source before the layout is computed.
+
+Imports that cannot be read locally are **not** fatal: missing files,
+`https://`/`http://` URLs and package-style paths such as
+`@openzeppelin/contracts/...`. They are collected in `unresolved_imports` and
+surfaced in `--json` output and on stderr. A base contract that could not be
+resolved contributes no storage, so review the list before trusting a layout.
+
+Import cycles are handled without infinite recursion: a file is parsed once per
+run.
+
 ## What the diff does not know
 
 - Proxy admin slots and implementation slots written outside the source.

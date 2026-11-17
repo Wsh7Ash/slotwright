@@ -198,6 +198,9 @@ class _Allocator:
 def _collect_types(source: Source, order: list[str]) -> tuple[dict[str, StructDef], set[str]]:
     structs: dict[str, StructDef] = {}
     enums: set[str] = set()
+    for name, struct in getattr(source, "file_structs", {}).items():
+        structs.setdefault(name, struct)
+    enums.update(getattr(source, "file_enums", set()))
     for name in order:
         contract = source.contracts[name]
         for struct in contract.structs:

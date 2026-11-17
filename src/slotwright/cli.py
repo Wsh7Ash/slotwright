@@ -57,8 +57,8 @@ contract Vault {
 """
 
 
-def _layout_payload(layout) -> dict:
-    return {
+def _layout_payload(layout, source=None) -> dict:
+    payload = {
         "contract": layout.contract,
         "total_slots": layout.total_slots,
         "entries": [
@@ -77,10 +77,13 @@ def _layout_payload(layout) -> dict:
         ],
         "not_in_storage": [decl.name for decl in layout.skipped],
     }
+    if source is not None:
+        payload["unresolved_imports"] = list(getattr(source, "unresolved_imports", []))
+    return payload
 
 
-def _diff_payload(result) -> dict:
-    return {
+def _diff_payload(result, old_source=None, new_source=None) -> dict:
+    payload = {
         "contract": result.contract,
         "verdict": result.verdict,
         "old_slots": result.old_slots,
@@ -95,6 +98,16 @@ def _diff_payload(result) -> dict:
             for change in result.changes
         ],
     }
+    unresolved = []
+    for src in (old_source, new_source):
+        if src is None:
+            continue
+        for item in getattr(src, "unresolved_imports", []):
+            if item not in unresolved:
+                unresolved.append(item)
+    if unresolved:
+        payload["unresolved_imports"] = unresolved
+    return payload
 
 
 def _emit(payload: dict, text: str, as_json: bool) -> None:
@@ -211,11 +224,21 @@ def main(argv: list[str] | None = None) -> int:
                 for name in source.order
             ]
             if args.json:
-                print(json.dumps(payload, indent=2))
+                out = {"contracts": payload}
+                if source.imports:
+                    out["imports"] = list(source.imports)
+                if source.unresolved_imports:
+                    out["unresolved_imports"] = list(source.unresolved_imports)
+                print(json.dumps(out, indent=2))
             else:
                 for item in payload:
                     bases = f" is {', '.join(item['bases'])}" if item["bases"] else ""
                     print(f"{item['name']} ({item['kind']}){bases}  line {item['line']}")
+                if source.unresolved_imports:
+                    print(
+                        "unresolved imports: " + ", ".join(source.unresolved_imports),
+                        file=sys.stderr,
+                    )
             return 0
 
         if args.command == "layout":
@@ -225,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
                 layout = layout_struct(source, contract.name, args.struct)
             else:
                 layout = build_layout(source, contract.name)
-            _emit(_layout_payload(layout), render_layout(layout), args.json)
+            _emit(_layout_payload(layout, source), render_layout(layout), args.json)
             return 0
 
         if args.command == "diff":
@@ -235,7 +258,11 @@ def main(argv: list[str] | None = None) -> int:
             old_layout = build_layout(old_source, name)
             new_layout = build_layout(new_source, name)
             result = diff_layouts(old_layout, new_layout)
-            _emit(_diff_payload(result), render_diff(result), args.json)
+            _emit(
+                _diff_payload(result, old_source, new_source),
+                render_diff(result),
+                args.json,
+            )
             return 1 if args.fail_on_breaking and result.breaking else 0
 
     except ParseError as exc:

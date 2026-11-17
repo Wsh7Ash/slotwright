@@ -9,7 +9,7 @@
 ## Validation performed
 - install: PASS (`PYTHONPATH=src python -c "import slotwright, slotwright.cli"` printed `import ok 0.1.0`)
 - build: PASS (no build step; package imports and CLI runs)
-- unit tests: PASS (52 passed)
+- unit tests: PASS (55 passed)
 - integration tests: PASS (CLI `layout`, `diff`, `contracts`, `demo` run on the example sources)
 - lint: N/A (no linter configured for this stdlib-only project)
 - type check: N/A (no type checker in scope for this run)

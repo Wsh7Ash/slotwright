@@ -128,3 +128,57 @@ def test_default_contract_is_the_last_declared():
     )
     assert source.require(None).name == "Second"
     assert source.require("First").name == "First"
+
+
+def test_imports_are_collected():
+    source = parse_source(
+        '\n'.join(
+            [
+                'import "./Base.sol";',
+                'import {Foo, Bar as Baz} from "./Other.sol";',
+                'import * as Lib from "./Lib.sol";',
+                'contract C { uint256 x; }',
+            ]
+        )
+    )
+    assert source.imports == ["./Base.sol", "./Other.sol", "./Lib.sol"]
+
+
+def test_parse_file_resolves_relative_import(tmp_path):
+    base = tmp_path / "Base.sol"
+    base.write_text(
+        "contract Base { address public owner; uint256[4] private __gap; }\n"
+        "struct Shared { uint128 a; uint128 b; }\n",
+        encoding="utf-8",
+    )
+    child = tmp_path / "Child.sol"
+    child.write_text(
+        'import "./Base.sol";\n'
+        "contract Child is Base { Shared public shared; uint256 public total; }\n",
+        encoding="utf-8",
+    )
+    from slotwright.parser import parse_file
+
+    source = parse_file(child)
+    assert "Base" in source.contracts
+    assert "Child" in source.contracts
+    assert source.unresolved_imports == []
+    layout = None
+    from slotwright.layout import build_layout
+
+    layout = build_layout(source, "Child")
+    names = [entry.name for entry in layout.entries]
+    assert names == ["owner", "__gap", "shared", "total"]
+
+
+def test_parse_file_records_unresolved_import(tmp_path):
+    child = tmp_path / "Child.sol"
+    child.write_text(
+        'import "./Missing.sol";\nimport "https://example.com/R.sol";\n'
+        "contract Child { uint256 x; }\n",
+        encoding="utf-8",
+    )
+    from slotwright.parser import parse_file
+
+    source = parse_file(child)
+    assert source.unresolved_imports == ["./Missing.sol", "https://example.com/R.sol"]

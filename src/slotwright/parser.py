@@ -89,6 +89,10 @@ class Source:
     path: str
     contracts: dict[str, Contract] = field(default_factory=dict)
     order: list[str] = field(default_factory=list)
+    imports: list[str] = field(default_factory=list)
+    unresolved_imports: list[str] = field(default_factory=list)
+    file_structs: dict[str, StructDef] = field(default_factory=dict)
+    file_enums: set[str] = field(default_factory=set)
 
     def require(self, name: str | None) -> Contract:
         if name is None:
@@ -300,10 +304,55 @@ def _split_bases(raw: str | None) -> tuple[str, ...]:
     return tuple(cleaned)
 
 
+IMPORT_RE = re.compile(
+    r"\bimport\s+(?:[^;]*?\s+from\s+)?[\"']([^\"']+)[\"']"
+)
+
+
+def _mask_comments(text: str) -> str:
+    """Blank comments while keeping code and string literals intact."""
+
+    out = list(text)
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in {'"', "'"}:
+            quote = ch
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == quote:
+                    j += 1
+                    break
+                j += 1
+            i = j
+        elif ch == "/" and i + 1 < n and text[i + 1] == "/":
+            end = text.find("\n", i)
+            if end == -1:
+                end = n
+            for k in range(i, end):
+                out[k] = " "
+            i = end
+        elif ch == "/" and i + 1 < n and text[i + 1] == "*":
+            found = text.find("*/", i + 2)
+            end = n if found == -1 else found + 2
+            for k in range(i, end):
+                if text[k] != "\n":
+                    out[k] = " "
+            i = end
+        else:
+            i += 1
+    return "".join(out)
+
+
 def parse_source(text: str, path: str = "<memory>") -> Source:
     masked = mask_source(text)
     starts = _line_index(text)
     source = Source(path=path)
+    source.imports = [m.group(1) for m in IMPORT_RE.finditer(_mask_comments(text))]
 
     rows: list[tuple[re.Match[str], int]] = []
     for match in CONTRACT_RE.finditer(masked):
@@ -380,15 +429,107 @@ def parse_source(text: str, path: str = "<memory>") -> Source:
         source.contracts[name] = contract
         source.order.append(name)
 
-    if not source.order:
+    # File-level structs and enums (Solidity 0.8+ allows declarations outside
+    # any contract). They are collected so imported helper types resolve.
+    for m in re.finditer(r"\b(struct|enum)\s+([A-Za-z_$][\w$]*)\s*\{", masked):
+        preceding = masked[: m.start()]
+        depth = preceding.count("{") - preceding.count("}")
+        if depth != 0:
+            continue
+        kind = m.group(1)
+        name = m.group(2)
+        open_index = m.end() - 1
+        try:
+            close_index = _matching_brace(masked, open_index)
+        except ParseError:
+            continue
+        if kind == "struct":
+            fields = _parse_fields(
+                masked[open_index + 1 : close_index],
+                "",
+                starts,
+                open_index + 1,
+            )
+            source.file_structs.setdefault(
+                name,
+                StructDef(
+                    name=name,
+                    contract="",
+                    fields=fields,
+                    line=_line_of(starts, m.start()),
+                ),
+            )
+        else:
+            source.file_enums.add(name)
+
+    if not source.order and not source.file_structs:
         raise ParseError(f"{path}: no contracts, libraries or interfaces found")
     return source
 
 
-def parse_file(path: str | Path) -> Source:
-    p = Path(path)
+def parse_file(
+    path: str | Path,
+    *,
+    resolve_imports: bool = True,
+    _seen: set[str] | None = None,
+) -> Source:
+    """Read and parse a Solidity file.
+
+    Relative imports (``import "./Foo.sol"``, ``import "Foo.sol"`` and the
+    ``from "..."`` forms) are resolved against the importing file's directory
+    and merged into the returned source. Imports that cannot be read locally
+    (URLs, package scopes, missing files) are recorded in
+    ``source.unresolved_imports`` instead of raising, so a single file with a
+    missing dependency still yields a useful layout.
+    """
+
+    p = Path(path).resolve()
     try:
         text = p.read_text(encoding="utf-8")
     except OSError as exc:
         raise ParseError(f"cannot read {p}: {exc}") from None
-    return parse_source(text, str(p))
+    source = parse_source(text, str(p))
+    if not resolve_imports:
+        return source
+
+    seen = set(_seen or ())
+    seen.add(str(p))
+    for imp in source.imports:
+        if imp.startswith(("http://", "https://")):
+            source.unresolved_imports.append(imp)
+            continue
+        candidate = p.parent / imp
+        if not candidate.suffix:
+            candidate = candidate.with_suffix(".sol")
+        if not candidate.is_file():
+            fallback = p.parent / imp
+            if fallback.is_file():
+                candidate = fallback
+        if not candidate.is_file():
+            source.unresolved_imports.append(imp)
+            continue
+        resolved = candidate.resolve()
+        if str(resolved) in seen:
+            continue
+        try:
+            imported = parse_file(resolved, resolve_imports=True, _seen=seen)
+        except ParseError:
+            source.unresolved_imports.append(imp)
+            continue
+        for name in imported.order:
+            if name not in source.contracts:
+                source.contracts[name] = imported.contracts[name]
+                source.order.append(name)
+        for name, struct in imported.file_structs.items():
+            source.file_structs.setdefault(name, struct)
+        source.file_enums.update(imported.file_enums)
+        source.unresolved_imports.extend(imported.unresolved_imports)
+
+    deduped: list[str] = []
+    seen_u: set[str] = set()
+    for item in source.unresolved_imports:
+        if item not in seen_u:
+            seen_u.add(item)
+            deduped.append(item)
+    source.unresolved_imports = deduped
+    return source

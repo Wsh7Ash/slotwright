@@ -140,7 +140,7 @@ slotwright/
 
 ## Limitations
 
-- Single file at a time: imports are not resolved. A base contract imported from another file is treated as contributing no storage; pass the file that declares the full hierarchy instead.
+- Relative imports are resolved: `import "./Base.sol"`, `import "Base.sol"` and the `from "..."` forms are followed and their contracts, in-contract structs, enums and file-level structs are merged into the layout. Imports that cannot be read locally (missing files, `https://` URLs, package scopes such as `@openzeppelin/...`) are listed under `unresolved_imports` in `--json` output and on stderr; those bases contribute no storage, so pass the file that declares the full hierarchy or vendor the dependency.
 - Inheritance uses depth-first, left-to-right linearization with duplicates removed. Conflicting diamond orders (needing full C3) are not modelled.
 - Initializers are ignored, so an explicit `assembly { sstore(...) }` or unstructured-storage hash cannot be seen.
 - Imported contract/interface types and user-defined value types are assumed to be 20-byte addresses unless a struct or enum with the same name is declared in the scanned file.
@@ -149,7 +149,7 @@ slotwright/
 
 ## Roadmap
 
-- Resolve relative imports to cover multi-file inheritance.
+- Resolve package-style imports (node_modules / Foundry remappings).
 - Read `solc --storage-layout` JSON as a second input format and diff source-derived layouts against compiler output.
 - Report explicit storage-slot collisions for unstructured storage namespaces.
 

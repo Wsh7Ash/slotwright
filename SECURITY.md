@@ -17,7 +17,7 @@ Open a private GitHub security advisory or email the maintainer listed on the Gi
 `SAFE` means the two files you passed have compatible layouts under the rules in `docs/USAGE.md`. It is not an audit. The analyser cannot see:
 
 - storage written through `assembly`/`sstore` or unstructured-storage hashing;
-- variables in imported base contracts that are not declared in the scanned file;
+- variables in imported base contracts whose files could not be resolved (listed under `unresolved_imports`);
 - proxy admin, implementation or beacon slots;
 - compiler-level packing changes across Solidity versions;
 - runtime behaviour, access control or upgrade authorization.
